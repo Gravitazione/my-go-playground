@@ -1,19 +1,52 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+
+	"github.com/Gravitazione/go-fiber-playground/internal/config"
+	"github.com/Gravitazione/go-fiber-playground/internal/database"
+	"github.com/Gravitazione/go-fiber-playground/internal/health"
+	"github.com/Gravitazione/go-fiber-playground/internal/redis"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg := config.Load()
+
+	db, err := database.NewPostgres(ctx, cfg.PostgresDSN)
+	if err != nil {
+		log.Fatalf("postgres: %v", err)
+	}
+	defer db.Close()
+
+	rdb, err := redis.New(ctx, cfg.RedisURL)
+	if err != nil {
+		log.Fatalf("redis: %v", err)
+	}
+	defer rdb.Close()
+
+	healthService := health.NewService(db, rdb)
+	healthHandler := health.NewHandler(healthService)
+
 	app := fiber.New()
+	app.Get("/health", healthHandler.Check)
 
-	app.Get("/health", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"status": "ok",
-		})
-	})
+	go func() {
+		<-ctx.Done()
+		log.Println("shutting down...")
+		_ = app.ShutdownWithTimeout(10 * time.Second)
+	}()
 
-	log.Fatal(app.Listen(":3000"))
+	if err := app.Listen(":" + cfg.AppPort); err != nil {
+		log.Printf("server: %v", err)
+	}
 }
