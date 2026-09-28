@@ -3,7 +3,8 @@ package config
 import "os"
 
 type Config struct {
-	AppPort string
+	AppPort  string
+	LogLevel string
 
 	PostgresDSN string
 
@@ -13,6 +14,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		AppPort:     getEnv("APP_PORT", "3000"),
+		LogLevel:    getEnv("LOG_LEVEL", "info"),
 		PostgresDSN: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/playground?sslmode=disable"),
 		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379/0"),
 	}

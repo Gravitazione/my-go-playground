@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,34 +13,45 @@ import (
 	"github.com/Gravitazione/go-fiber-playground/internal/config"
 	"github.com/Gravitazione/go-fiber-playground/internal/database"
 	"github.com/Gravitazione/go-fiber-playground/internal/health"
+	"github.com/Gravitazione/go-fiber-playground/internal/logger"
 	"github.com/Gravitazione/go-fiber-playground/internal/redis"
 )
 
 func main() {
+	cfg := config.Load()
+	log := logger.New(cfg.LogLevel)
+
+	if err := run(cfg, log); err != nil {
+		log.Error("application stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(cfg config.Config, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cfg := config.Load()
-
 	db, err := database.NewPostgres(ctx, cfg.PostgresDSN)
 	if err != nil {
-		log.Fatalf("postgres: %v", err)
+		return err
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			log.Printf("close postgres: %v", err)
+			log.Error("close postgres", "error", err)
 		}
 	}()
+	log.Info("postgres connected")
 
 	rdb, err := redis.New(ctx, cfg.RedisURL)
 	if err != nil {
-		log.Fatalf("redis: %v", err)
+		return err
 	}
 	defer func() {
 		if err := rdb.Close(); err != nil {
-			log.Printf("close redis: %v", err)
+			log.Error("close redis", "error", err)
 		}
 	}()
+	log.Info("redis connected")
 
 	healthService := health.NewService(db, rdb)
 	healthHandler := health.NewHandler(healthService)
@@ -50,11 +61,13 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		log.Println("shutting down...")
-		_ = app.ShutdownWithTimeout(10 * time.Second)
+		log.Info("shutting down...")
+		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
+			log.Error("shutdown server", "error", err)
+		}
 	}()
 
-	if err := app.Listen(":" + cfg.AppPort); err != nil {
-		log.Printf("server: %v", err)
-	}
+	log.Debug("starting server", "port", cfg.AppPort)
+
+	return app.Listen(":" + cfg.AppPort)
 }
