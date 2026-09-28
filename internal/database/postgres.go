@@ -2,12 +2,14 @@ package database
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	apperror "github.com/Gravitazione/go-fiber-playground/internal/error"
 )
 
 const (
@@ -27,12 +29,12 @@ func NewPostgres(ctx context.Context, dsn string) (*Database, error) {
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("open postgres: %w", err)
+		return nil, apperror.Wrap(err, apperror.CodeServiceUnavailable, "open postgres")
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("get sql.DB: %w", err)
+		return nil, apperror.Wrap(err, apperror.CodeInternal, "get sql.DB")
 	}
 
 	sqlDB.SetMaxOpenConns(maxOpenConns)
@@ -44,8 +46,8 @@ func NewPostgres(ctx context.Context, dsn string) (*Database, error) {
 	defer cancel()
 
 	if err := sqlDB.PingContext(pingCtx); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("ping postgres: %w", err)
+		closeErr := sqlDB.Close()
+		return nil, apperror.Wrap(errors.Join(err, closeErr), apperror.CodeServiceUnavailable, "ping postgres")
 	}
 
 	return &Database{DB: db}, nil
