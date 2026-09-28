@@ -26,13 +26,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("postgres: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("close postgres: %v", err)
+		}
+	}()
 
 	rdb, err := redis.New(ctx, cfg.RedisURL)
 	if err != nil {
 		log.Fatalf("redis: %v", err)
 	}
-	defer rdb.Close()
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			log.Printf("close redis: %v", err)
+		}
+	}()
 
 	healthService := health.NewService(db, rdb)
 	healthHandler := health.NewHandler(healthService)

@@ -2,10 +2,12 @@ package redis
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
+
+	apperror "github.com/Gravitazione/go-fiber-playground/internal/error"
 )
 
 const connectTimeout = 5 * time.Second
@@ -17,7 +19,7 @@ type Client struct {
 func New(ctx context.Context, url string) (*Client, error) {
 	opts, err := goredis.ParseURL(url)
 	if err != nil {
-		return nil, fmt.Errorf("parse redis url: %w", err)
+		return nil, apperror.Wrap(err, apperror.CodeInternal, "parse redis url")
 	}
 
 	client := goredis.NewClient(opts)
@@ -26,8 +28,8 @@ func New(ctx context.Context, url string) (*Client, error) {
 	defer cancel()
 
 	if err := client.Ping(pingCtx).Err(); err != nil {
-		client.Close()
-		return nil, fmt.Errorf("ping redis: %w", err)
+		closeErr := client.Close()
+		return nil, apperror.Wrap(errors.Join(err, closeErr), apperror.CodeServiceUnavailable, "ping redis")
 	}
 
 	return &Client{Client: client}, nil
